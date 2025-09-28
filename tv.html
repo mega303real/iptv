@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modern IPTV Player</title>
+    <title>IPTV Player for Static Hosting</title>
     <style>
         :root {
             --primary-bg: #121212;
@@ -33,7 +33,6 @@
             overflow: hidden;
         }
 
-        /* --- Header --- */
         .header {
             background-color: var(--secondary-bg);
             padding: 15px 20px;
@@ -41,6 +40,7 @@
             display: flex;
             align-items: center;
             gap: 20px;
+            flex-shrink: 0;
         }
 
         .header h1 {
@@ -96,7 +96,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* --- Sidebar (Channel List) --- */
         .sidebar {
             width: 350px;
             background-color: var(--secondary-bg);
@@ -128,16 +127,9 @@
             flex-grow: 1;
         }
         
-        .channel-list::-webkit-scrollbar {
-            width: 8px;
-        }
-        .channel-list::-webkit-scrollbar-track {
-            background: var(--secondary-bg);
-        }
-        .channel-list::-webkit-scrollbar-thumb {
-            background: var(--tertiary-bg);
-            border-radius: 4px;
-        }
+        .channel-list::-webkit-scrollbar { width: 8px; }
+        .channel-list::-webkit-scrollbar-track { background: var(--secondary-bg); }
+        .channel-list::-webkit-scrollbar-thumb { background: var(--tertiary-bg); border-radius: 4px; }
 
         .channel-list li {
             padding: 10px 15px;
@@ -169,7 +161,6 @@
             text-overflow: ellipsis;
         }
 
-        /* --- Main Content (Video Player) --- */
         .main-content {
             flex-grow: 1;
             background-color: var(--primary-bg);
@@ -213,8 +204,7 @@
             <div class="search-container">
                 <input type="text" id="search-input" placeholder="Search channels...">
             </div>
-            <ul class="channel-list" id="channel-list">
-                </ul>
+            <ul class="channel-list" id="channel-list"></ul>
         </div>
         <div class="main-content" id="player-container">
              <div class="player-placeholder">
@@ -232,7 +222,6 @@
             const searchInput = document.getElementById('search-input');
             const channelList = document.getElementById('channel-list');
             const videoPlayer = document.getElementById('video-player');
-            const playerContainer = document.getElementById('player-container');
             const loader = document.getElementById('loader');
 
             let hls = null;
@@ -241,7 +230,6 @@
             loadPlaylistBtn.addEventListener('click', loadPlaylist);
             searchInput.addEventListener('input', filterChannels);
 
-            // Automatically load the default playlist on page load
             if (m3uUrlInput.value) {
                 loadPlaylist();
             }
@@ -257,13 +245,13 @@
                 channelList.innerHTML = '<li>Loading channels...</li>';
 
                 try {
-                    // Use a CORS proxy to fetch the playlist
-                    // This helps bypass browser restrictions (CORS policy)
-                    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-                    const response = await fetch(proxyUrl + url);
+                    // *** THIS IS THE ONLY PART THAT CHANGED ***
+                    // We use the AllOrigins proxy, which works entirely in the browser.
+                    const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                    const response = await fetch(proxyUrl + encodeURIComponent(url));
                     
                     if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
+                        throw new Error(`Failed to load playlist. Error: HTTP error! Status: ${response.status}`);
                     }
                     
                     const data = await response.text();
@@ -272,7 +260,7 @@
 
                 } catch (error) {
                     console.error('Failed to load playlist:', error);
-                    channelList.innerHTML = `<li style="color: #ff8a80;">Error: Could not load playlist. Check the URL and CORS policy.</li>`;
+                    channelList.innerHTML = `<li style="color: #ff8a80;">${error.message}</li>`;
                 } finally {
                     showLoader(false);
                 }
@@ -289,7 +277,7 @@
                         if (info) {
                             currentChannel = {
                                 id: info[1] || '',
-                                logo: info[2] || 'https://via.placeholder.com/40', // Default logo
+                                logo: info[2] || 'https://via.placeholder.com/40',
                                 group: info[3] || 'General',
                                 name: info[4].trim()
                             };
@@ -316,7 +304,7 @@
                     const logo = document.createElement('img');
                     logo.src = channel.logo;
                     logo.className = 'channel-logo';
-                    logo.onerror = () => { logo.src = 'https://via.placeholder.com/40'; }; // Fallback for broken images
+                    logo.onerror = () => { logo.src = 'https://via.placeholder.com/40'; };
                     
                     const name = document.createElement('span');
                     name.className = 'channel-name';
@@ -331,7 +319,6 @@
             }
 
             function playChannel(url, element) {
-                // Show the video player and hide the placeholder
                 document.querySelector('.player-placeholder')?.remove();
                 videoPlayer.style.display = 'block';
                 
@@ -343,16 +330,14 @@
                     hls.loadSource(url);
                     hls.attachMedia(videoPlayer);
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        videoPlayer.play();
+                        videoPlayer.play().catch(e => console.error("Autoplay failed:", e));
                     });
                     hls.on(Hls.Events.ERROR, function (event, data) {
                         if (data.fatal) {
                             console.error('HLS Fatal Error:', data);
-                            // You could try to recover or show an error message here
                         }
                     });
                 } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-                    // Native HLS support on Safari/iOS
                     videoPlayer.src = url;
                     videoPlayer.addEventListener('loadedmetadata', () => {
                         videoPlayer.play();
@@ -361,7 +346,6 @@
                     alert('Your browser does not support HLS playback.');
                 }
 
-                // Highlight the active channel
                 document.querySelectorAll('.channel-list li').forEach(li => li.classList.remove('active'));
                 element.classList.add('active');
             }
