@@ -1,40 +1,53 @@
 <?php
-// PHP PROXY LOGIC
-// Check if the 'proxyUrl' parameter is set in the request.
+// PHP PROXY LOGIC (UPGRADED WITH cURL)
 if (isset($_GET['proxyUrl'])) {
-    // If it is, this script's job is to act as a proxy.
     $m3u_url = $_GET['proxyUrl'];
 
-    // Validate the URL.
     if (empty($m3u_url) || !filter_var($m3u_url, FILTER_VALIDATE_URL)) {
-        http_response_code(400); // Bad Request
+        http_response_code(400);
         echo "Error: Invalid URL provided for proxy.";
-        exit; // Stop execution.
+        exit;
     }
 
-    // Set headers to allow cross-origin requests and define content type.
-    header("Access-Control-Allow-Origin: *");
-    header("Content-Type: application/x-mpegURL");
+    // Initialize a cURL session
+    $ch = curl_init();
 
-    // Use a standard User-Agent to avoid being blocked.
-    $options = ['http' => ['header' => 'User-Agent: Mozilla/5.0']];
-    $context = stream_context_create($options);
+    // Set cURL options
+    curl_setopt($ch, CURLOPT_URL, $m3u_url); // The URL to fetch
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); // Return the response as a string
+    curl_setopt($ch, CURLOPT_HEADER, false); // Don't include the header in the output
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Follow redirects
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'); // Mimic a browser
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Bypasses SSL certificate verification issues (useful for some servers)
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
-    // Fetch the M3U content from the target URL.
-    $playlist_content = @file_get_contents($m3u_url, false, $context);
+    // Execute the cURL request
+    $playlist_content = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE); // Get the HTTP status code
+    $curl_error = curl_error($ch); // Get any cURL-specific error
 
-    if ($playlist_content === false) {
-        http_response_code(502); // Bad Gateway
-        echo "Error: Failed to fetch playlist from the source.";
-        exit; // Stop execution.
+    // Close the cURL session
+    curl_close($ch);
+
+    // Check for errors
+    if ($curl_error) {
+        http_response_code(500);
+        echo "cURL Error: " . $curl_error;
+        exit;
     }
     
-    // Output the fetched content and stop the script.
+    if ($http_code !== 200) {
+        http_response_code($http_code);
+        echo "Error: The remote server responded with HTTP status code " . $http_code;
+        exit;
+    }
+
+    // If successful, output the content
+    header("Content-Type: application/x-mpegURL");
     echo $playlist_content;
     exit;
 }
-
-// If the 'proxyUrl' is NOT set, the script continues below to render the HTML player.
+// END OF PHP PROXY LOGIC
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -283,8 +296,6 @@ if (isset($_GET['proxyUrl'])) {
                 channelList.innerHTML = '<li>Loading channels...</li>';
 
                 try {
-                    // *** THIS IS THE KEY CHANGE ***
-                    // It now calls itself (this file) with the `proxyUrl` parameter.
                     const response = await fetch(`?proxyUrl=${encodeURIComponent(url)}`);
                     
                     if (!response.ok) {
