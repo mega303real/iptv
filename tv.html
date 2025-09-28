@@ -246,9 +246,9 @@
 
                 try {
                     // *** THIS IS THE ONLY PART THAT CHANGED ***
-                    // We use the AllOrigins proxy, which works entirely in the browser.
-                    const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                    const response = await fetch(proxyUrl + encodeURIComponent(url));
+                    // We are now using the cors.sh proxy.
+                    const proxyUrl = 'https://cors.sh/';
+                    const response = await fetch(proxyUrl + url);
                     
                     if (!response.ok) {
                         throw new Error(`Failed to load playlist. Error: HTTP error! Status: ${response.status}`);
