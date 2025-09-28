@@ -1,0 +1,402 @@
+<?php
+// PHP PROXY LOGIC
+// Check if the 'proxyUrl' parameter is set in the request.
+if (isset($_GET['proxyUrl'])) {
+    // If it is, this script's job is to act as a proxy.
+    $m3u_url = $_GET['proxyUrl'];
+
+    // Validate the URL.
+    if (empty($m3u_url) || !filter_var($m3u_url, FILTER_VALIDATE_URL)) {
+        http_response_code(400); // Bad Request
+        echo "Error: Invalid URL provided for proxy.";
+        exit; // Stop execution.
+    }
+
+    // Set headers to allow cross-origin requests and define content type.
+    header("Access-Control-Allow-Origin: *");
+    header("Content-Type: application/x-mpegURL");
+
+    // Use a standard User-Agent to avoid being blocked.
+    $options = ['http' => ['header' => 'User-Agent: Mozilla/5.0']];
+    $context = stream_context_create($options);
+
+    // Fetch the M3U content from the target URL.
+    $playlist_content = @file_get_contents($m3u_url, false, $context);
+
+    if ($playlist_content === false) {
+        http_response_code(502); // Bad Gateway
+        echo "Error: Failed to fetch playlist from the source.";
+        exit; // Stop execution.
+    }
+    
+    // Output the fetched content and stop the script.
+    echo $playlist_content;
+    exit;
+}
+
+// If the 'proxyUrl' is NOT set, the script continues below to render the HTML player.
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All-in-One IPTV Player</title>
+    <style>
+        :root {
+            --primary-bg: #121212;
+            --secondary-bg: #1e1e1e;
+            --tertiary-bg: #282828;
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --accent-color: #9c27b0; /* A nice purple accent */
+            --border-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--primary-bg);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: var(--secondary-bg);
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--accent-color);
+        }
+        
+        .m3u-input-container {
+            display: flex;
+            flex-grow: 1;
+            gap: 10px;
+        }
+
+        #m3u-url-input {
+            flex-grow: 1;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            background-color: var(--tertiary-bg);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        #load-playlist-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background-color: var(--accent-color);
+            color: var(--text-primary);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #load-playlist-btn:hover {
+            background-color: #7b1fa2;
+        }
+        
+        .loader {
+            display: none;
+            margin-left: 10px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--accent-color);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .sidebar {
+            width: 350px;
+            background-color: var(--secondary-bg);
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .search-container {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            background-color: var(--tertiary-bg);
+            color: var(--text-primary);
+        }
+
+        .channel-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        
+        .channel-list::-webkit-scrollbar { width: 8px; }
+        .channel-list::-webkit-scrollbar-track { background: var(--secondary-bg); }
+        .channel-list::-webkit-scrollbar-thumb { background: var(--tertiary-bg); border-radius: 4px; }
+
+        .channel-list li {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transition: background-color 0.2s;
+        }
+
+        .channel-list li:hover, .channel-list li.active {
+            background-color: var(--tertiary-bg);
+        }
+
+        .channel-logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            background-color: #444;
+            flex-shrink: 0;
+        }
+
+        .channel-name {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            background-color: var(--primary-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #video-player {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+        }
+        
+        .player-placeholder {
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .player-placeholder p {
+            font-size: 1.2rem;
+        }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+
+    <div class="header">
+        <h1>IPTV Player</h1>
+        <div class="m3u-input-container">
+            <input type="text" id="m3u-url-input" placeholder="Enter .m3u playlist URL here..." value="https://iptv-org.github.io/iptv/index.m3u">
+            <button id="load-playlist-btn">Load Playlist</button>
+            <div class="loader" id="loader"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Search channels...">
+            </div>
+            <ul class="channel-list" id="channel-list"></ul>
+        </div>
+        <div class="main-content" id="player-container">
+             <div class="player-placeholder">
+                <h2>Welcome!</h2>
+                <p>Load a playlist to start watching.</p>
+            </div>
+            <video id="video-player" controls style="display: none;"></video>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const m3uUrlInput = document.getElementById('m3u-url-input');
+            const loadPlaylistBtn = document.getElementById('load-playlist-btn');
+            const searchInput = document.getElementById('search-input');
+            const channelList = document.getElementById('channel-list');
+            const videoPlayer = document.getElementById('video-player');
+            const playerContainer = document.getElementById('player-container');
+            const loader = document.getElementById('loader');
+
+            let hls = null;
+            let channels = [];
+
+            loadPlaylistBtn.addEventListener('click', loadPlaylist);
+            searchInput.addEventListener('input', filterChannels);
+
+            if (m3uUrlInput.value) {
+                loadPlaylist();
+            }
+
+            async function loadPlaylist() {
+                const url = m3uUrlInput.value.trim();
+                if (!url) {
+                    alert('Please enter a valid M3U URL.');
+                    return;
+                }
+                
+                showLoader(true);
+                channelList.innerHTML = '<li>Loading channels...</li>';
+
+                try {
+                    // *** THIS IS THE KEY CHANGE ***
+                    // It now calls itself (this file) with the `proxyUrl` parameter.
+                    const response = await fetch(`?proxyUrl=${encodeURIComponent(url)}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Proxy error! Status: ${response.status} - ${await response.text()}`);
+                    }
+                    
+                    const data = await response.text();
+                    channels = parseM3U(data);
+                    displayChannels(channels);
+
+                } catch (error) {
+                    console.error('Failed to load playlist:', error);
+                    channelList.innerHTML = `<li style="color: #ff8a80;">${error.message}</li>`;
+                } finally {
+                    showLoader(false);
+                }
+            }
+
+            function parseM3U(data) {
+                const lines = data.split('\n');
+                const channels = [];
+                let currentChannel = {};
+
+                for (const line of lines) {
+                    if (line.startsWith('#EXTINF:')) {
+                        const info = line.match(/#EXTINF:-1(?: tvg-id="([^"]*)")?(?: tvg-logo="([^"]*)")?(?: group-title="([^"]*)")?,(.*)/);
+                        if (info) {
+                            currentChannel = {
+                                id: info[1] || '',
+                                logo: info[2] || 'https://via.placeholder.com/40',
+                                group: info[3] || 'General',
+                                name: info[4].trim()
+                            };
+                        }
+                    } else if (line.trim() && !line.startsWith('#')) {
+                        currentChannel.url = line.trim();
+                        channels.push(currentChannel);
+                        currentChannel = {};
+                    }
+                }
+                return channels;
+            }
+
+            function displayChannels(channelArray) {
+                channelList.innerHTML = '';
+                if (channelArray.length === 0) {
+                     channelList.innerHTML = '<li>No channels found in the playlist.</li>';
+                     return;
+                }
+                channelArray.forEach(channel => {
+                    const li = document.createElement('li');
+                    li.dataset.url = channel.url;
+                    
+                    const logo = document.createElement('img');
+                    logo.src = channel.logo;
+                    logo.className = 'channel-logo';
+                    logo.onerror = () => { logo.src = 'https://via.placeholder.com/40'; };
+                    
+                    const name = document.createElement('span');
+                    name.className = 'channel-name';
+                    name.textContent = channel.name;
+
+                    li.appendChild(logo);
+                    li.appendChild(name);
+                    
+                    li.addEventListener('click', () => playChannel(channel.url, li));
+                    channelList.appendChild(li);
+                });
+            }
+
+            function playChannel(url, element) {
+                document.querySelector('.player-placeholder')?.remove();
+                videoPlayer.style.display = 'block';
+                
+                if (Hls.isSupported()) {
+                    if (hls) {
+                        hls.destroy();
+                    }
+                    hls = new Hls();
+                    hls.loadSource(url);
+                    hls.attachMedia(videoPlayer);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        videoPlayer.play().catch(e => console.error("Autoplay failed:", e));
+                    });
+                    hls.on(Hls.Events.ERROR, function (event, data) {
+                        if (data.fatal) {
+                            console.error('HLS Fatal Error:', data);
+                        }
+                    });
+                } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+                    videoPlayer.src = url;
+                    videoPlayer.addEventListener('loadedmetadata', () => {
+                        videoPlayer.play();
+                    });
+                } else {
+                    alert('Your browser does not support HLS playback.');
+                }
+
+                document.querySelectorAll('.channel-list li').forEach(li => li.classList.remove('active'));
+                element.classList.add('active');
+            }
+
+            function filterChannels() {
+                const query = searchInput.value.toLowerCase();
+                const filteredChannels = channels.filter(channel => channel.name.toLowerCase().includes(query));
+                displayChannels(filteredChannels);
+            }
+            
+            function showLoader(show) {
+                loader.style.display = show ? 'block' : 'none';
+            }
+        });
+    </script>
+</body>
+</html>
